@@ -4,10 +4,8 @@
 class PawnPiece : public ChessPiece
 {
 public:
-	bool didMove;
-
 	PawnPiece(int x, int y, PieceColor color)
-		: ChessPiece(x, y, PieceType::PAWN, color), didMove(false)
+		: ChessPiece(x, y, PieceType::PAWN, color)
 	{}
 
 	bool isMovableTo(ChessEngine &engine, int dstX, int dstY)
@@ -15,10 +13,10 @@ public:
 		PathState pathState = engine.checkPath(this->x, this->y, dstX, dstY);
 		ChessPiece* dstPiece = engine.getPieceAt(dstX, dstY);
 		
-		if((this->color == PieceColor::BLACK && dstY - this->y == 2) ||
-		   (this->color == PieceColor::WHITE && dstY - this->y == -2)) // 2칸 앞 이동
+		if((this->color == PieceColor::BLACK && this->y == 1 && dstY == 3) ||
+		   (this->color == PieceColor::WHITE && this->y == 6 && dstY == 4)) // 2칸 앞 이동
 		{
-			return didMove == false && pathState == PathState::STRAIGHT_LINE && dstPiece == nullptr;
+			return pathState == PathState::STRAIGHT_LINE && dstPiece == nullptr;
 		}
 
 		if((this->color == PieceColor::BLACK && dstY - this->y == 1) ||
@@ -37,13 +35,10 @@ public:
 		return false;
 	}
 
-	bool moveTo(ChessEngine &engine, int dstX, int dstY) override
+	void whenMoved(ChessEngine &engine, int dstX, int dstY) override
 	{
-		// TODO: 끝에 도달했을 때도 구현할 것
+		// TODO: 폰이 끝에 도달했을 때도 구현할 것
 		
-		bool success = ChessPiece::moveTo(engine, dstX, dstY);
-		if(success) this->didMove = true;
-		return success;
 	}
 };
 
@@ -62,11 +57,9 @@ public:
 		return engine.checkPath(this->x, this->y, dstX, dstY) == PathState::STRAIGHT_LINE;
 	}
 
-	bool moveTo(ChessEngine &engine, int dstX, int dstY) override
+	void whenMoved(ChessEngine &engine, int dstX, int dstY) override
 	{
-		bool success = ChessPiece::moveTo(engine, dstX, dstY);
-		if(success) this->didMove = true;
-		return success;
+		this->didMove = true;
 	}
 };
 
@@ -136,23 +129,15 @@ public:
 		return false;
 	}
 
-	bool moveTo(ChessEngine &engine, int dstX, int dstY)
+	void whenMoved(ChessEngine &engine, int dstX, int dstY)
 	{
-		RookPiece* castlingRook = this->getCastlingVictim(engine, dstX, dstY);
-		bool success = ChessPiece::moveTo(engine, dstX, dstY);
-		if(success)
-		{
-			this->didMove = true;
-			// 캐슬링 조건이 아닐 땐 castlingRook이 nullptr일거라
-			// 그냥 실행시켜도 상관 없음
-			this->moveRookForCastling(engine, dstX, dstY, castlingRook);
-		}
-		return success;
+		this->didMove = true;
 	}
 
-private:
 	/**
 	 * @return 캐슬링할 수 있을 경우 룩의 객체 포인터. 할 수 없을 경우 nullptr
+	 * @param dstX 킹이 움직일 자리 (x좌표)
+	 * @param dstY 킹이 움직일 자리 (y좌표)
 	 */
 	RookPiece* getCastlingVictim(ChessEngine &engine, int dstX, int dstY)
 	{
@@ -182,19 +167,15 @@ private:
 		return rook;
 	}
 
-	void moveRookForCastling(ChessEngine &engine, int kingDstX, int kingDstY, RookPiece* castlingRook)
+	int getCastlingRookDstX(ChessEngine &engine, int kingDstX, RookPiece* castlingRook)
 	{
 		// 캐슬링 조건이 아닌 상태에서 이 함수를 실행시킬 수 있기 때문에
 		// (이 때 castlingRook으로 nullptr가 들어옴) nullptr 체크를 해야 됨
-		if(castlingRook == nullptr) return;
+		if(castlingRook == nullptr) return -1;
 
-		int rookDstX;
-		if     (kingDstX == 2) rookDstX = 3; // 퀸 사이드 캐슬링
-		else if(kingDstX == 6) rookDstX = 5; // 킹 사이드 캐슬링
-		else return;
-
-		castlingRook->x = rookDstX;
-		castlingRook->didMove = true;
+		if     (kingDstX == 2) return 3; // 퀸 사이드 캐슬링
+		else if(kingDstX == 6) return 5; // 킹 사이드 캐슬링
+		else return -1; // getCastlingVictim()이 nullptr라면 이게 리턴될 일은 없을거임
 	}
 };
 
@@ -206,25 +187,6 @@ ChessPiece::ChessPiece(int x_, int y_, PieceType type_, PieceColor color_)
 
 ChessPiece::~ChessPiece()
 {}
-
-
-bool ChessPiece::moveTo(ChessEngine &engine, int dstX, int dstY)
-{
-	ChessPiece* piece = engine.getPieceAt(dstX, dstY);
-	if(piece != nullptr)
-	{
-		PieceColor dstPieceColor = piece->color;
-		//
-		if(this->color != dstPieceColor)
-		{
-			engine.killPieceAt(dstX, dstY);
-		}
-		else return false;
-	}
-	this->x = dstX;
-	this->y = dstY;
-	return true;
-}
 
 
 ChessEngine::ChessEngine()
@@ -239,79 +201,86 @@ ChessEngine::~ChessEngine()
 }
 
 
-void ChessEngine::resetBoard()
+void ChessEngine::resetBoard(const char *sequence)
 {
+	if(strlen(sequence) != 64) return;
+
 	this->clearBoard();
 	
-	// 흑 진영 (뒤)
-	this->pieces[ 0] = new RookPiece(0, 0, PieceColor::BLACK);
-	this->pieces[ 1] = new KnightPiece(1, 0, PieceColor::BLACK);
-	this->pieces[ 2] = new BishopPiece(2, 0, PieceColor::BLACK);
-	this->pieces[ 3] = new QueenPiece(3, 0, PieceColor::BLACK);
-	this->pieces[ 4] = new KingPiece(4, 0, PieceColor::BLACK);
-	this->pieces[ 5] = new BishopPiece(5, 0, PieceColor::BLACK);
-	this->pieces[ 6] = new KnightPiece(6, 0, PieceColor::BLACK);
-	this->pieces[ 7] = new RookPiece(7, 0, PieceColor::BLACK);
+	for(int i = 0; i < 64; i++)
+	{
+		int x = i % 8, y = i / 8;
+		char c = sequence[i];
 
-	// 흑 진영 (앞)
-	this->pieces[ 8] = new PawnPiece(0, 1, PieceColor::BLACK);
-	this->pieces[ 9] = new PawnPiece(1, 1, PieceColor::BLACK);
-	this->pieces[10] = new PawnPiece(2, 1, PieceColor::BLACK);
-	this->pieces[11] = new PawnPiece(3, 1, PieceColor::BLACK);
-	this->pieces[12] = new PawnPiece(4, 1, PieceColor::BLACK);
-	this->pieces[13] = new PawnPiece(5, 1, PieceColor::BLACK);
-	this->pieces[14] = new PawnPiece(6, 1, PieceColor::BLACK);
-	this->pieces[15] = new PawnPiece(7, 1, PieceColor::BLACK);
-
-	// 백 진영 (앞)
-	this->pieces[16] = new PawnPiece(0, 6, PieceColor::WHITE);
-	this->pieces[17] = new PawnPiece(1, 6, PieceColor::WHITE);
-	this->pieces[18] = new PawnPiece(2, 6, PieceColor::WHITE);
-	this->pieces[19] = new PawnPiece(3, 6, PieceColor::WHITE);
-	this->pieces[20] = new PawnPiece(4, 6, PieceColor::WHITE);
-	this->pieces[21] = new PawnPiece(5, 6, PieceColor::WHITE);
-	this->pieces[22] = new PawnPiece(6, 6, PieceColor::WHITE);
-	this->pieces[23] = new PawnPiece(7, 6, PieceColor::WHITE);
+		PieceColor color = (c & 0b00100000) == 0 ? PieceColor::BLACK : PieceColor::WHITE;
+		ChessPiece *piece;
+		switch(c & 0b01011111)
+		{
+			case 'P': piece = new PawnPiece(x, y, color);   break;
+			case 'R': piece = new RookPiece(x, y, color);   break;
+			case 'N': piece = new KnightPiece(x, y, color); break;
+			case 'B': piece = new BishopPiece(x, y, color); break;
+			case 'Q': piece = new QueenPiece(x, y, color);  break;
+			case 'K': piece = new KingPiece(x, y, color);   break;
+			default: piece = nullptr;
+		}
+		this->chessBoard[y][x] = piece;
+	}
+	this->updateCheckmate();
 	
-	// 백 진영 (뒤)
-	this->pieces[24] = new RookPiece(0, 7, PieceColor::WHITE);
-	this->pieces[25] = new KnightPiece(1, 7, PieceColor::WHITE);
-	this->pieces[26] = new BishopPiece(2, 7, PieceColor::WHITE);
-	this->pieces[27] = new QueenPiece(3, 7, PieceColor::WHITE);
-	this->pieces[28] = new KingPiece(4, 7, PieceColor::WHITE);
-	this->pieces[29] = new BishopPiece(5, 7, PieceColor::WHITE);
-	this->pieces[30] = new KnightPiece(6, 7, PieceColor::WHITE);
-	this->pieces[31] = new RookPiece(7, 7, PieceColor::WHITE);
-
 	this->chessTurn = PieceColor::WHITE;
 }
 
 
+/**
+ * 체스 판을 게임 시작 상태로 초기화 시켜주는 함수.
+ */
+void ChessEngine::resetBoard()
+{
+	this->resetBoard(
+		"RNBQKBNR"
+		"PPPPPPPP"
+		"        "
+		"Q       "
+		"        "
+		"        "
+		"ppp pppp"
+		"rnbqkbnr"
+	);
+}
+
+
+/**
+ * 체스 판 위를 싹 다 비워버리는 함수.
+ */
 void ChessEngine::clearBoard()
 {
-	for(ChessPiece* piece : this->pieces)
+	for(int y = 0; y < 8; y++) for(int x = 0; x < 8; x++)
 	{
+		ChessPiece*& piece = this->chessBoard[y][x];
 		delete piece;
 		piece = nullptr;
 	}
 }
 
 
+/**
+ * (x, y)에 있는 말을 리턴해주는 함수. 만약 비어있다면 nullptr 리턴.
+ */
 ChessPiece* ChessEngine::getPieceAt(int x, int y)
 {
-	for(ChessPiece* piece : this->pieces)
-	{
-		if(piece == nullptr) continue;
-		if(piece->x == x && piece->y == y) return piece;
-	}
-	return nullptr;
+	return this->chessBoard[y][x];
 }
 
 
+/**
+ * 말 종류가 type이고 색깔이 color인 말을 찾아주는 함수. 없다면 nullptr 리턴.
+ */
 ChessPiece* ChessEngine::findPiece(PieceType type, PieceColor color)
 {
-	for(ChessPiece* piece : this->pieces)
+	for(int y = 0; y < 8; y++) for(int x = 0; x < 8; x++)
 	{
+		ChessPiece* piece = this->chessBoard[y][x];
 		if(piece == nullptr) continue;
 		if(piece->type == type && piece->color == color) return piece;
 	}
@@ -319,20 +288,25 @@ ChessPiece* ChessEngine::findPiece(PieceType type, PieceColor color)
 }
 
 
+/**
+ * (x, y)에 있는 말을 없애버리는(=nullptr로 만들어버리는) 함수.
+ * 원래 (x, y)에 말이 없었어도 문제 없이 작동함.
+ */
 void ChessEngine::killPieceAt(int x, int y)
 {
-	for(ChessPiece* &piece : this->pieces)
-	{
-		if(piece == nullptr) continue;
-		if(piece->x != x || piece->y != y) continue;
-
-		delete piece;
-		piece = nullptr;
-	}
+	ChessPiece*& piece = this->chessBoard[y][x];
+	delete piece;
+	piece = nullptr;
 }
 
 
-bool ChessEngine::isPieceMovableTo(int srcX, int srcY, int dstX, int dstY)
+/**
+ * (srcX, srcY)에 있는 말을 (dstX, dstY)로 옮길 수 있는지 알려주는 함수.
+ * 원래 (srcX, srcY)에 말이 없었다면 false 리턴.
+ * @param checkTurn true일 경우 턴이 맞는지까지 계산함.
+ * @param checkCheckmate true일 경우 체크메이트인지까지 계산함.
+ */
+bool ChessEngine::isPieceMovableTo(int srcX, int srcY, int dstX, int dstY, bool checkTurn, bool checkCheckmate)
 {
 	if(srcX == dstX && srcY == dstY) return false; // src == dst일 때 false
 	if(srcX < 0 || 8 <= srcX || srcY < 0 || 8 <= srcY) return false; // src가 체스 판 밖일 때 false
@@ -343,15 +317,19 @@ bool ChessEngine::isPieceMovableTo(int srcX, int srcY, int dstX, int dstY)
 	if(srcPiece == nullptr) return false;
 
 	// 현재 턴과 맞는지 확인
-	if(srcPiece->color != this->chessTurn) return false;
+	if(checkTurn && srcPiece->color != this->chessTurn) return false;
 	
 	ChessPiece* dstPiece = this->getPieceAt(dstX, dstY);
 	// dst에 체스 말이 있는데 src와 같은 색깔이라면 false
 	if(dstPiece != nullptr && dstPiece->color == srcPiece->color) return false;
 
-	// TODO: 체크메이트 확인할 것
-
-	return srcPiece->isMovableTo(*this, dstX, dstY);
+	// 움직일 수 있는지 확인 (체크메이트일지는 아직 확인하지 않음)
+	bool isMovable = srcPiece->isMovableTo(*this, dstX, dstY);
+	if(!isMovable) return false;
+	
+	// 체크메이트일 경우 false 리턴
+	if(checkCheckmate && this->simulateCheckmate(this->chessTurn, srcX, srcY, dstX, dstY)) return false;
+	return true;
 }
 
 
@@ -402,20 +380,130 @@ PathState ChessEngine::checkPath(int srcX, int srcY, int dstX, int dstY)
 }
 
 
-bool ChessEngine::movePieceTo(int srcX, int srcY, int dstX, int dstY)
+/**
+ * (srcX, srcY)에 있는 말을 별도의 확인(isPieceMovableTo 등) 없이 강제로 (dstX, dstY)로 움직임.
+ * 만약 (srcX, srcY)에 아무것도 없다면 아무것도 하지 않음.
+ * 
+ * movePhysicalPieceTo()나 killPhysicalPieceAt()은 부르지 않음.
+ * 
+ * @return 원래 (dstX, dstY)에 있던 말.
+ */
+ChessPiece* ChessEngine::forceMovePieceTo(int srcX, int srcY, int dstX, int dstY)
 {
-	// src에서 dst로 움직일 수 없으면 false
-	if(!this->isPieceMovableTo(srcX, srcY, dstX, dstY)) return false;
-
 	ChessPiece* piece = this->getPieceAt(srcX, srcY);
-	bool result = piece->moveTo(*this, dstX, dstY);
-	if(result)
+	if(piece == nullptr) return nullptr;
+
+	ChessPiece* tempPiece = this->chessBoard[dstY][dstX];
+	this->chessBoard[dstY][dstX] = piece;
+	this->chessBoard[srcY][srcX] = nullptr;
+	piece->x = dstX; piece->y = dstY;
+
+	return tempPiece;
+}
+
+
+bool ChessEngine::simulateCheckmate(PieceColor turn, int srcX, int srcY, int dstX, int dstY)
+{
+	// (srcX, srcY)에 있는 말(의 포인터)을 가져옴
+	ChessPiece* piece = this->getPieceAt(srcX, srcY);
+
+	// 말을 움직이기 전, 가상으로 말을 먼저 움직여보는 코드.
+	// 만약 가상으로 움직였을 때 자신이 체크메이트에 놓이는 상황이 된다면,
+	//   1. 가상으로 움직인 행위를 취소함.
+	//   2. false를 리턴함.
+	// 만약 체크메이트에 놓이는 상황이 되지 않는다면,
+	//   1. 가상으로 움직이는 행위를 실제로 실행함.
+	//   2. true를 리턴함.
+
+	// 먼저 캐슬링인지 확인함.
+	// 캐슬링을 확인하는 이유는 한번에 2개의 말을 움직이는 유일한 움직임이기 때문.
+	RookPiece* castlingRook = nullptr;
+	int cVSrcX, cVDstX; // cV: castlingVictim; 코드가 너무 길어져서 줄임
+	if(piece->type == PieceType::KING)
 	{
-		this->updateCheckmate();
-		this->chessTurn = this->chessTurn == PieceColor::WHITE ? PieceColor::BLACK : PieceColor::WHITE;
+		KingPiece* castlingKing = static_cast<KingPiece*>(piece);
+		castlingRook = castlingKing->getCastlingVictim(*this, dstX, dstY);
+
+		// 캐슬링이 맞을 경우
+		if(castlingRook != nullptr)
+		{
+			// 캐슬링 당하는 룩을 움직임. (이 때 y좌표는 움직이지 않으므로 srcY로 통일)
+			cVSrcX = castlingRook->x;
+			cVDstX = castlingKing->getCastlingRookDstX(*this, dstX, castlingRook);
+			this->forceMovePieceTo(cVSrcX, srcY, cVDstX, srcY);
+		}
 	}
 
+	// 원래 (dstX, dstY)에 있던 말을 "eatenPiece"에 임시로 저장함.
+	// ((dstX, dstY)가 비어있었더라도 상관 없음)
+	// 그리고 움직일 말을 (srcX, srcY)에서 (dstX, dstY)로 움직임.
+	ChessPiece* eatenPiece = this->forceMovePieceTo(srcX, srcY, dstX, dstY);
+
+	// 체크메이트 여부를 계산함.
+	// 움직인 행위를 취소할거기 때문에 prevWhiteCM과 prevBlackCM에 이전 체크메이트 여부를 저장함.
+	bool prevWhiteCM = this->whiteCheckmate;
+	bool prevBlackCM = this->blackCheckmate;
+	this->updateCheckmate();
+	bool result = this->isCheckmate(turn);
+
+	// 가상으로 움직인 행위를 취소함.
+	this->forceMovePieceTo(dstX, dstY, srcX, srcY);
+	this->chessBoard[dstY][dstX] = eatenPiece;
+
+	// 캐슬링이었을 경우
+	if(castlingRook != nullptr)
+	{
+		this->forceMovePieceTo(cVDstX, srcY, cVSrcX, srcY);
+	}
+
+	// 체크메이트 여부를 원래대로 바꾼 후 리턴함
+	this->whiteCheckmate = prevWhiteCM;
+	this->blackCheckmate = prevBlackCM;
 	return result;
+}
+
+
+bool ChessEngine::movePieceTo(int srcX, int srcY, int dstX, int dstY)
+{
+	// src에서 dst로 움직일 수 없으면 false 리턴
+	if(!this->isPieceMovableTo(srcX, srcY, dstX, dstY, true, true)) return false;
+
+	// (srcX, srcY)에 있는 말(의 포인터)을 가져옴
+	ChessPiece* piece = this->getPieceAt(srcX, srcY);
+
+	// 캐슬링인지 확인함.
+	RookPiece* castlingRook = nullptr;
+	int cVSrcX, cVDstX; // cV: castlingVictim; 코드가 너무 길어져서 줄임
+	if(piece->type == PieceType::KING)
+	{
+		KingPiece* castlingKing = static_cast<KingPiece*>(piece);
+		castlingRook = castlingKing->getCastlingVictim(*this, dstX, dstY);
+	}
+
+	// 말을 이동시킴.
+	ChessPiece* eatenPiece = this->forceMovePieceTo(srcX, srcY, dstX, dstY);
+
+	// 만약 eatenPiece가 있었다면 제거함. (무조건 movePhysicalPieceTo 이전에 실행해야 함)
+	if(eatenPiece != nullptr)
+	{
+		delete eatenPiece;
+		killPhysicalPieceAt(dstX, dstY);
+	}
+
+	// whenMoved()를 실행함.
+	piece->whenMoved(*this, dstX, dstY);
+	if(castlingRook != nullptr)
+	{
+		castlingRook->whenMoved(*this, cVDstX, srcY);
+	}
+	movePhysicalPieceTo(srcX, srcY, dstX, dstY);
+
+	// 체크메이트 여부를 다시 계산함.
+	this->updateCheckmate();
+
+	// 턴을 바꿈
+	this->chessTurn = this->chessTurn == PieceColor::WHITE ? PieceColor::BLACK : PieceColor::WHITE;
+	return true;
 }
 
 
@@ -440,15 +528,18 @@ bool ChessEngine::calculateCheckmate(PieceColor victimColor, PieceColor opponent
 
     // 킹을 찾았을 때, 체스 판을 모두 찾으면서 상대편 말이 나오면
     // 그 말이 킹을 잡을 수 있는지 확인.
-	for(ChessPiece* piece : this->pieces)
+	for(int y = 0; y < 8; y++) for(int x = 0; x < 8; x++)
 	{
+		// (x, y)에 말이 없다면 스킵
+		ChessPiece* piece = this->chessBoard[y][x];
 		if(piece == nullptr) continue;
 
 		// 말 색깔이 상대편 색깔이 아니면 스킵
 		if(piece->color != opponentColor) continue;
 
         // 상대편 말이 킹을 잡을 수 있는지 확인
-		if(this->isPieceMovableTo(piece->x, piece->y, kingPiece->x, kingPiece->y)) return true;
+		// 이 때 checkTurn=false, checkCheckmate=false로 잡아야 됨 (아니면 무한루프에 빠짐)
+		if(this->isPieceMovableTo(piece->x, piece->y, kingPiece->x, kingPiece->y, false, false)) return true;
 	}
 
 	return false;
@@ -460,69 +551,4 @@ bool ChessEngine::isCheckmate(PieceColor color)
     if(color == PieceColor::WHITE) return this->whiteCheckmate;
     else if(color == PieceColor::BLACK) return this->blackCheckmate;
     return false;
-}
-
-
-void ChessEngine::printBoard(std::ostream &out, int selX, int selY)
-{
-	char printMatrix[8][8], printCoverTensor[8][8][2];
-	for(int y = 0; y < 8; y++) for(int x = 0; x < 8; x++)
-	{
-		printMatrix[y][x] = '.';
-		printCoverTensor[y][x][0] = printCoverTensor[y][x][1] = ' ';
-	}
-
-	ChessPiece* selectedPiece = this->getPieceAt(selX, selY);
-	if(selectedPiece != nullptr)
-	{
-		for(int y = 0; y < 8; y++)
-		{
-			for(int x = 0; x < 8; x++)
-			{
-				if(!this->isPieceMovableTo(selX, selY, x, y)) continue;
-				printCoverTensor[y][x][0] = '(';
-				printCoverTensor[y][x][1] = ')';
-			}
-		}
-	}
-
-	for(ChessPiece* piece : this->pieces)
-	{
-		if(piece == nullptr) continue;
-
-		int x = piece->x, y = piece->y;
-		if(piece->x < 0 || 8 <= piece->x || piece->y < 0 || 8 <= piece->y) continue;
-
-		PieceColor color = piece->color;
-		PieceType type = piece->type;
-
-		char printValue = static_cast<char>(type);
-		if(color == PieceColor::WHITE) printValue |= 0b00100000;
-		printMatrix[y][x] = printValue;
-
-		if(type == PieceType::KING && this->isCheckmate(color) && printCoverTensor[y][x][0] == ' ')
-		{
-			printCoverTensor[y][x][0] = printCoverTensor[y][x][1] = '!';
-		}
-	}
-
-	if(0 <= selX && selX < 8 && 0 <= selY && selY < 8)
-	{
-		printCoverTensor[selY][selX][0] = '[';
-		printCoverTensor[selY][selX][1] = ']';
-	}
-
-	out << "     A  B  C  D  E  F  G  H  " << std::endl;
-	out << "   +------------------------+" << std::endl;
-	for(int y = 0; y < 8; y++)
-	{
-		out << " " << (8-y) << " |";
-		for(int x = 0; x < 8; x++)
-		{
-			out << printCoverTensor[y][x][0] << printMatrix[y][x] << printCoverTensor[y][x][1];
-		}
-		out << "| " << (8-y) << std::endl;
-	}
-	out << "   +------------------------+" << std::endl;
-	out << "     A  B  C  D  E  F  G  H  " << std::endl;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include "chess_physical.h"
 
 int min(int a, int b) { return a > b ? b : a; }
 int max(int a, int b) { return a > b ? a : b; }
@@ -37,7 +38,13 @@ public:
 	~ChessPiece();
 
 	virtual bool isMovableTo(ChessEngine&, int dstX, int dstY) = 0;
-	virtual bool moveTo(ChessEngine&, int dstX, int dstY);
+
+	/**
+	 * 자기 자신이 움직여졌을 때 실행되는 함수.
+	 * 기본적으로 아무것도 하지 않음.
+	 */
+	virtual void whenMoved(ChessEngine&, int dstX, int dstY)
+	{}
 };
 
 
@@ -48,21 +55,24 @@ public:
 	~ChessEngine();
 
 	void resetBoard();
+	void resetBoard(const char *sequence);
 	void clearBoard();
 
 	ChessPiece* getPieceAt(int x, int y);
 	ChessPiece* findPiece(PieceType type, PieceColor color);
 	void killPieceAt(int x, int y);
 
-	bool isPieceMovableTo(int srcX, int srcY, int dstX, int dstY);
+	bool isPieceMovableTo(int srcX, int srcY, int dstX, int dstY, bool checkTurn, bool checkCheckmate);
 	PathState checkPath(int srcX, int srcY, int dstX, int dstY);
 	bool isCheckmate(PieceColor color);
+	bool simulateCheckmate(PieceColor turn, int srcX, int srcY, int dstX, int dstY);
 
+	ChessPiece* forceMovePieceTo(int srcX, int srcY, int dstX, int dstY);
 	bool movePieceTo(int srcX, int srcY, int dstX, int dstY);
 	void printBoard(std::ostream& out, int selX, int selY);
 
 private:
-	ChessPiece* pieces[32];
+	ChessPiece* chessBoard[8][8];
 	PieceColor chessTurn;
 	bool whiteCheckmate, blackCheckmate;
 

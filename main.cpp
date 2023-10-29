@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "chess_engine.cpp"
+#include "chess_engine_print.cpp"
 
 
 char* input_line();
