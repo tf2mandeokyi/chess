@@ -5,6 +5,7 @@ C++로 구현한 간단한 체스엔진
 ## 실행 화면
 
 ![Main screen](.github/image/main_screen.png)
+
 (엔진을 주로 구현하는거라 화면은 간단히만 구현함)
 
 ## 실행 방법
