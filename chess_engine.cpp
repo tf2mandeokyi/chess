@@ -402,18 +402,18 @@ ChessPiece* ChessEngine::forceMovePieceTo(int srcX, int srcY, int dstX, int dstY
 }
 
 
+/**
+ * 말을 (srcX, srcY)에서 (dstX, dstY)로 움직일 때, turn이 체크메이트가 되는지 계산하는 함수.
+ * 
+ * 말을 가상으로 움직여본 후, 체크메이트를 계산하고 다시 원상복구시키기 때문에 계산량이 많음.
+ * 되도록이면 자주 실행하지 말 것
+ * 
+ * @return 체크메이트가 된다면 true, 아니면 false를 리턴함.
+ */
 bool ChessEngine::simulateCheckmate(PieceColor turn, int srcX, int srcY, int dstX, int dstY)
 {
 	// (srcX, srcY)에 있는 말(의 포인터)을 가져옴
 	ChessPiece* piece = this->getPieceAt(srcX, srcY);
-
-	// 말을 움직이기 전, 가상으로 말을 먼저 움직여보는 코드.
-	// 만약 가상으로 움직였을 때 자신이 체크메이트에 놓이는 상황이 된다면,
-	//   1. 가상으로 움직인 행위를 취소함.
-	//   2. false를 리턴함.
-	// 만약 체크메이트에 놓이는 상황이 되지 않는다면,
-	//   1. 가상으로 움직이는 행위를 실제로 실행함.
-	//   2. true를 리턴함.
 
 	// 먼저 캐슬링인지 확인함.
 	// 캐슬링을 확인하는 이유는 한번에 2개의 말을 움직이는 유일한 움직임이기 때문.
