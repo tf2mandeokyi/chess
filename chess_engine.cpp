@@ -241,10 +241,10 @@ void ChessEngine::resetBoard()
 		"RNBQKBNR"
 		"PPPPPPPP"
 		"        "
-		"Q       "
 		"        "
 		"        "
-		"ppp pppp"
+		"        "
+		"pppppppp"
 		"rnbqkbnr"
 	);
 }
