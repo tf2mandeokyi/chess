@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <string.h>
 #include "chess_physical.h"
 
 int min(int a, int b) { return a > b ? b : a; }

@@ -22,7 +22,12 @@ C++로 구현한 간단한 체스엔진
 ## 실행 방법
 
 ```bash
+# 컴파일
 gcc main.cpp
+# 위 명령이 안 될 때는
+gcc main.cpp -lstdc++
+
+# 실행
 ./a.out
 ```
 
